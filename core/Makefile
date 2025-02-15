@@ -1,5 +1,5 @@
 CC = clang
-CFLAGS = -std=c99 -Wall -Wextra -pedantic -fPIC
+CFLAGS = -std=c99 -Wall -Wextra -pedantic -fPIC -Wno-gnu-zero-variadic-macro-arguments
 INCLUDE = -Iinclude
 
 SRC_DIR = src

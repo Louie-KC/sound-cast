@@ -7,9 +7,9 @@
 - [ ] Platform layer
     - [ ] Windows (Win32 https://learn.microsoft.com/en-us/windows/win32/directshow/selecting-a-capture-device)
     - [ ] MacOS (AvFoundation https://developer.apple.com/documentation/avfoundation/audio-and-video-capture)
-- [ ] Logger
+- [x] Logger
     - [x] Define `LOG_...` macros for fatal, error, warn, info and debug logging.
-    - [ ] Allow for varargs to be passed in and formatted into log.
+    - [x] Allow for varargs to be passed in and formatted into log.
 - [ ] Assertions
     - [x] Create assertion macro.
         - [x] Optional message variation.
