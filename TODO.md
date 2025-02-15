@@ -10,6 +10,9 @@
 - [ ] Logger
     - [x] Define `LOG_...` macros for fatal, error, warn, info and debug logging.
     - [ ] Allow for varargs to be passed in and formatted into log.
-
+- [ ] Assertions
+    - [x] Create assertion macro.
+        - [x] Optional message variation.
+        - [ ] Non-fatal level assertions.
 # CLI
 - [ ] Argument definitions and parsing
