@@ -1,7 +1,7 @@
 # Sound Cast TODO
 
 # Core
-- [ ] Define Core API
+- [ ] Define Core API interface
     - [ ] Context struct
     - [ ] Initialisation, shutdown
 - [ ] Platform layer
@@ -14,5 +14,10 @@
     - [x] Create assertion macro.
         - [x] Optional message variation.
         - [ ] Non-fatal level assertions.
+- [ ] Networking
+    - [x] Socket init, shutdown, receive, send.
+    - [x] Multicast group membership for client.
+    - [ ] (De)serialisation of datagrams to/from network endianess.
+
 # CLI
 - [ ] Argument definitions and parsing
