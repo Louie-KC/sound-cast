@@ -14,9 +14,9 @@ int main(int argc, char *argv[]) {
         datagram_t data = {
             .header = {
                 .kind = SERVER_AUDIO,
-                .sequence = 16,
+                .sequence = 11,
                 .timestamp = {
-                    1739941111, 888888
+                    1111111111, 111111
                 }
             },
             .payload = { 0 }
@@ -24,19 +24,40 @@ int main(int argc, char *argv[]) {
 
         LOG_DEBUG("Server: Advertising");
         for (int i = 0; i < 1; i++) {
-            // sc_network_server_advertise(&conn);
+            sc_network_server_advertise(&conn);
+            LOG_DEBUG("Advertised");
+            // sleep(1);
             sc_network_send(&conn, &data, sizeof(datagram_t));
-            LOG_DEBUG("len: %d", sizeof(datagram_t))
+            LOG_DEBUG("Sent");
+            LOG_DEBUG("len: %d", sizeof(datagram_t));
         }
     }
     if (argv[1][0] == 'c') {
         datagram_t recv;
         sc_socket_client_init(&conn);
         LOG_DEBUG("Client: Receiving datagram");
-        sc_network_receive(&conn, &recv, false);
+        sc_network_receive(&conn, &recv, true);
         LOG_DEBUG("header: { %d, %d, { %d, %d } }", recv.header.kind,
             recv.header.sequence, recv.header.timestamp.tv_sec,
             recv.header.timestamp.tv_usec);
+        if (recv.header.kind == SERVER_AD) {
+            LOG_DEBUG("advertised group: %.*s", IPV4_ADDR_MAX_LEN, recv.payload.group_addr);
+            LOG_DEBUG("received from: %.*s", IPV4_ADDR_MAX_LEN, conn.other_addr);
+            if (sc_socket_client_join(&conn, recv.payload.group_addr)) {
+                LOG_INFO("Client joined multicast group");
+            }
+            sc_network_receive(&conn, &recv, false);
+            LOG_DEBUG("header: { %d, %d, { %d, %d } }", recv.header.kind,
+                recv.header.sequence, recv.header.timestamp.tv_sec,
+                recv.header.timestamp.tv_usec);
+            
+            if (sc_socket_client_leave(&conn)) {
+                LOG_INFO("Client left multicast group");
+            }
+        }
+        else if (recv.header.kind == SERVER_AUDIO) {
+            LOG_DEBUG("Audio received");
+        }
     }
     LOG_DEBUG("Closing socket");
     sc_socket_close(&conn);

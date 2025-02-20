@@ -3,6 +3,7 @@
 #include "defines.h"
 #include "networking.h"
 #include <sys/time.h>  // struct timeval
+#include <netinet/in.h>
 
 #define DATAGRAM_PAYLOAD_MAX_SIZE 1  // TODO: revise
 #define IPV4_ADDR_MAX_LEN 16
@@ -19,9 +20,14 @@ typedef struct __attribute__((__packed__)) {
     struct timeval timestamp;
 } datagram_header;
 
+typedef union __attribute__((__packed__)) {
+    char group_addr[IPV4_ADDR_MAX_LEN];        // SERVER_AD
+    uint8_t audio[DATAGRAM_PAYLOAD_MAX_SIZE];  // SERVER_AUDIO
+} datagram_payload;
+
 typedef struct __attribute__((__packed__)) {
-    datagram_header header;
-    uint8_t payload[DATAGRAM_PAYLOAD_MAX_SIZE];
+    datagram_header  header;
+    datagram_payload payload;
 } datagram_t;
 
 typedef struct {
@@ -30,5 +36,8 @@ typedef struct {
     uint32_t send_sequence;
     uint32_t recv_sequence;
     uint8_t  is_server;
-    char     dest_addr[IPV4_ADDR_MAX_LEN];  // server: multicast group, client: server addr
+    char     group_addr[IPV4_ADDR_MAX_LEN];
+    char     other_addr[IPV4_ADDR_MAX_LEN];  // server: self/own addr, client: server addr.
+    // struct sockaddr_in group_addr;
+    // struct sockaddr_in other_addr;  // server: self/own addr, client: server addr.
 } connection_t;

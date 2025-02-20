@@ -44,7 +44,7 @@ ssize_t _multicast(connection_t *conn, uint8_t *buffer, uint32_t len) {
 
     memset(&multicast_addr_group, 0, sizeof(struct sockaddr_in));
     multicast_addr_group.sin_family = AF_INET;
-    multicast_addr_group.sin_addr.s_addr = inet_addr(MULTICAST_TEMP_GROUP);
+    multicast_addr_group.sin_addr.s_addr = inet_addr(conn->group_addr);
     multicast_addr_group.sin_port = htons(MULTICAST_TEMP_PORT);
 
     ssize_t bytes_sent = sendto(
@@ -70,7 +70,7 @@ ssize_t _unicast(connection_t *conn, uint8_t *buffer, uint32_t len) {
 
     memset(&addr, 0, sizeof(struct sockaddr_in));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(conn->dest_addr);
+    addr.sin_addr.s_addr = inet_addr(conn->other_addr);
     addr.sin_port = htons(UNICAST_TEMP_PORT);
 
     ssize_t bytes_sent = sendto(
@@ -105,12 +105,16 @@ uint8_t _sc_network_send_valid_params(datagram_t *dgram, uint32_t len) {
         LOG_WARN("Attempted to send datagram less than header");
         return false;
     }
-    if (dgram->header.kind != SERVER_AUDIO && len > sizeof(datagram_header)) {
-        LOG_WARN("Datagram size (%d) exceeds limit", len);
-        return false;
-    }
     if (dgram->header.kind == SERVER_AD) {
         LOG_WARN("sc_network_send called with server ad. Use sc_network_server_advertise");
+        return false;
+    }
+    if (dgram->header.kind == SERVER_CLOSE && len > sizeof(datagram_header)) {
+        LOG_WARN("Datagram size (%d) exceeds limit for SERVER_CLOSE", len);
+        return false;
+    }
+    if (dgram->header.kind == SERVER_AUDIO && len > sizeof(datagram_t)) {
+        LOG_WARN("Datagram size (%d) exceeds limit for SERVER_AD", len);
         return false;
     }
     return true;
@@ -144,7 +148,8 @@ void sc_socket_server_init(connection_t *conn) {
     conn->send_sequence = 0;
     conn->recv_sequence = 0;
     conn->is_server = true;
-    strncpy(conn->dest_addr, MULTICAST_TEMP_GROUP, IPV4_ADDR_MAX_LEN);
+    strncpy(conn->group_addr, MULTICAST_TEMP_GROUP, IPV4_ADDR_MAX_LEN);
+    memset(&conn->other_addr, '\0', IPV4_ADDR_MAX_LEN);
 }
 
 void sc_socket_client_init(connection_t *conn) {
@@ -156,36 +161,74 @@ void sc_socket_client_init(connection_t *conn) {
     conn->socket_aux_fd = socket(AF_INET, SOCK_DGRAM, 0);
     CORE_ASSERT(conn->socket_aux_fd >= 0);
 
-    struct sockaddr_in addr_audio;
-    memset(&addr_audio, 0, sizeof(struct sockaddr_in));
-    addr_audio.sin_family = AF_INET;
-    addr_audio.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr_audio.sin_port = htons(MULTICAST_TEMP_PORT);
-    CORE_ASSERT(bind(conn->socket_audio_fd, (struct sockaddr *) &addr_audio, sizeof(struct sockaddr_in)) >= 0);
-    LOG_INFO("Client multi socket bound");
-
-    // Bind receiving auxiliary message socket
-    struct sockaddr_in addr_aux;
-    memset(&addr_aux, 0, sizeof(struct sockaddr_in));
-    addr_aux.sin_family = AF_INET;
-    addr_aux.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr_aux.sin_port = htons(BROADCAST_TEMP_PORT);
-    CORE_ASSERT(bind(conn->socket_aux_fd, (struct sockaddr *) &addr_aux, sizeof(struct sockaddr_in)) >= 0);
+    // Bind aux socket to pick up all broadcast traffic
+    struct sockaddr_in all_addr;
+    memset(&all_addr, 0, sizeof(struct sockaddr_in));
+    all_addr.sin_family = AF_INET;
+    all_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    all_addr.sin_port = htons(BROADCAST_TEMP_PORT);
+    CORE_ASSERT(bind(conn->socket_aux_fd, (struct sockaddr *) &all_addr, sizeof(struct sockaddr_in)) >= 0);
     LOG_INFO("Client aux socket bound");
 
-    // Join multicast group
-    struct ip_mreq mreq;
-    mreq.imr_multiaddr.s_addr = inet_addr(MULTICAST_TEMP_GROUP);
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    CORE_ASSERT(setsockopt(conn->socket_audio_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-                            (char*) &mreq, sizeof(mreq)) >= 0);
-    LOG_INFO("Joined multicast group: %s", MULTICAST_TEMP_GROUP);
+    // Bind audio/group socket to multicast port
+    struct sockaddr_in group_addr;
+    memset(&group_addr, 0, sizeof(struct sockaddr_in));
+    group_addr.sin_family = AF_INET;
+    group_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    group_addr.sin_port = htons(MULTICAST_TEMP_PORT);
+    CORE_ASSERT(bind(conn->socket_audio_fd, (struct sockaddr *) &group_addr, sizeof(struct sockaddr_in)) >= 0);
+    LOG_INFO("Client group socket bound");
 
     // Set sequence and flag(s)
     conn->send_sequence = 0;
     conn->recv_sequence = 0;
     conn->is_server = false;
-    memset(&conn->dest_addr, '\0', IPV4_ADDR_MAX_LEN);
+    memset(&conn->group_addr, '\0', IPV4_ADDR_MAX_LEN);
+    memset(&conn->other_addr, '\0', IPV4_ADDR_MAX_LEN);
+}
+
+uint8_t sc_socket_client_join(connection_t *conn, char multicast_group[IPV4_ADDR_MAX_LEN]) {
+    struct ip_mreq mreq;
+    int32_t opt_ret;
+
+    mreq.imr_multiaddr.s_addr = inet_addr(multicast_group);
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    opt_ret = setsockopt(
+        conn->socket_audio_fd,
+        IPPROTO_IP,
+        IP_ADD_MEMBERSHIP,
+        (char *) &mreq, sizeof(struct ip_mreq)
+    );
+    if (opt_ret == 0) {
+        // Store joined group address
+        memcpy(conn->group_addr, multicast_group, IPV4_ADDR_MAX_LEN);
+    } else {
+        LOG_ERROR("Failed to join multicast group %.*s. Errno [%d] %s", IPV4_ADDR_MAX_LEN,
+            multicast_group, errno, strerror(errno));
+    }
+    return opt_ret == 0;
+}
+
+uint8_t sc_socket_client_leave(connection_t *conn) {
+    struct ip_mreq mreq;
+    int32_t opt_ret;
+
+    mreq.imr_multiaddr.s_addr = inet_addr(conn->group_addr);
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    opt_ret = setsockopt(
+        conn->socket_audio_fd,
+        IPPROTO_IP,
+        IP_DROP_MEMBERSHIP,
+        (char *) &mreq,
+        sizeof(struct ip_mreq)
+    );
+    if (opt_ret == 0) {
+        memset(&conn->group_addr, '\0', IPV4_ADDR_MAX_LEN);
+    } else {
+        LOG_ERROR("Failed to leave multicast group %.*s. Errno [%d] %s", IPV4_ADDR_MAX_LEN,
+            conn->group_addr, errno, strerror(errno));
+    }
+    return opt_ret == 0;
 }
 
 void sc_socket_close(connection_t *conn) {
@@ -203,13 +246,17 @@ uint8_t sc_network_server_advertise(connection_t *conn) {
     struct timeval time;
     gettimeofday(&time, NULL);
 
-    datagram_header header = {
-        .kind = SERVER_AD,
-        .sequence = conn->send_sequence++,
-        .timestamp = time
+    datagram_t datagram = {
+        .header = {
+            .kind = SERVER_AD,
+            .sequence = conn->send_sequence++,
+            .timestamp = time
+        },
+        .payload = { 0 }  // written with below memcpy
     };
+    memcpy(datagram.payload.group_addr, conn->group_addr, IPV4_ADDR_MAX_LEN);
 
-    return _broadcast(conn, (uint8_t *) &header, sizeof(datagram_header)) > 0;
+    return _broadcast(conn, (uint8_t *) &datagram, sizeof(datagram_header) + IPV4_ADDR_MAX_LEN) > 0;
 }
 
 uint8_t sc_network_send(connection_t *conn, datagram_t *dgram, uint32_t len) {
@@ -236,32 +283,19 @@ uint8_t sc_network_send(connection_t *conn, datagram_t *dgram, uint32_t len) {
 }
 
 uint8_t sc_network_receive(connection_t *conn, datagram_t *dest, uint8_t aux) {
+    datagram_t *recv_dgram;
     uint8_t buffer[sizeof(datagram_t)];
-    int32_t socket_fd;
-    struct sockaddr_in addr;
-
-    memset(&addr, 0, sizeof(struct sockaddr_in));
-    addr.sin_family = AF_INET;
-    if (aux) {
-        addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-        addr.sin_port = htons(BROADCAST_TEMP_PORT);
-
-        socket_fd = conn->socket_aux_fd;
-    } else {
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        addr.sin_port = htons(MULTICAST_TEMP_PORT);
-        
-        socket_fd = conn->socket_audio_fd;
-    }
-
+    struct sockaddr_in src_addr;
     uint32_t addr_len = sizeof(struct sockaddr_in);
+    char src_ip_buffer[IPV4_ADDR_MAX_LEN];
+    int32_t socket_fd = aux ? conn->socket_aux_fd : conn->socket_audio_fd;
 
     ssize_t bytes_received = recvfrom(
         socket_fd,
         buffer,
         sizeof(datagram_t),
         0,
-        (struct sockaddr *) &addr,
+        (struct sockaddr *) &src_addr,
         &addr_len
     );
     if (bytes_received < 0) {
@@ -273,16 +307,26 @@ uint8_t sc_network_receive(connection_t *conn, datagram_t *dest, uint8_t aux) {
         return false;
     }
     
-    datagram_t *recv_dgram = (datagram_t *) buffer;
+    recv_dgram = (datagram_t *) buffer;
     if (recv_dgram->header.kind > SERVER_AUDIO) {
         LOG_WARN("Invalid header on received datagram");
         return false;
     }
+    // Copy to `dest` datagram
     dest->header.kind      = recv_dgram->header.kind;
     dest->header.sequence  = recv_dgram->header.sequence;
     dest->header.timestamp = recv_dgram->header.timestamp;
-    if (recv_dgram->header.kind == SERVER_AUDIO) {
-        memcpy(dest->payload, recv_dgram->payload, DATAGRAM_PAYLOAD_MAX_SIZE);
+    if (recv_dgram->header.kind == SERVER_AD) {
+        // Advertised multicast group address
+        memcpy(dest->payload.group_addr, recv_dgram->payload.group_addr, IPV4_ADDR_MAX_LEN);
+        
+        // Store the source IP address for the received datagram
+        inet_ntop(AF_INET, &src_addr.sin_addr, src_ip_buffer, IPV4_ADDR_MAX_LEN);
+        memcpy(conn->other_addr, src_ip_buffer, IPV4_ADDR_MAX_LEN);
+    }
+    else if (recv_dgram->header.kind == SERVER_AUDIO) {
+        // Sent audio payload
+        memcpy(dest->payload.audio, recv_dgram->payload.audio, DATAGRAM_PAYLOAD_MAX_SIZE);
     }
 
     conn->recv_sequence++;
