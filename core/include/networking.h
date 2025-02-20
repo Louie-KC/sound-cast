@@ -8,8 +8,6 @@
 #define BROADCAST_TEMP_PORT 6001
 #define UNICAST_TEMP_PORT 6002
 
-#define IPV4_ADDR_MAX_LEN 16
-
 // Initialise server sockets
 CORE_API void sc_socket_server_init(connection_t *conn);
 
@@ -18,7 +16,7 @@ CORE_API void sc_socket_client_init(connection_t *conn);
 
 // Join a multicast group, storing the address in `conn` on success.
 // Returns true if successful, false otherwise.
-CORE_API uint8_t sc_socket_client_join(connection_t *conn, char multicast_group[IPV4_ADDR_MAX_LEN]);
+CORE_API uint8_t sc_socket_client_join(connection_t *conn, char multicast_group[INET_ADDRSTRLEN]);
 
 // Leave a multicast group, clearing the stored group address from `conn` on success.
 // Returns true if successful, false otherwise.

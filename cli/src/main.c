@@ -41,8 +41,8 @@ int main(int argc, char *argv[]) {
             recv.header.sequence, recv.header.timestamp.tv_sec,
             recv.header.timestamp.tv_usec);
         if (recv.header.kind == SERVER_AD) {
-            LOG_DEBUG("advertised group: %.*s", IPV4_ADDR_MAX_LEN, recv.payload.group_addr);
-            LOG_DEBUG("received from: %.*s", IPV4_ADDR_MAX_LEN, conn.other_addr);
+            LOG_DEBUG("advertised group: %.*s", INET_ADDRSTRLEN, recv.payload.group_addr);
+            LOG_DEBUG("received from: %.*s", INET_ADDRSTRLEN, conn.other_addr);
             if (sc_socket_client_join(&conn, recv.payload.group_addr)) {
                 LOG_INFO("Client joined multicast group");
             }

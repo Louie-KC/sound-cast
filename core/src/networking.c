@@ -148,8 +148,8 @@ void sc_socket_server_init(connection_t *conn) {
     conn->send_sequence = 0;
     conn->recv_sequence = 0;
     conn->is_server = true;
-    strncpy(conn->group_addr, MULTICAST_TEMP_GROUP, IPV4_ADDR_MAX_LEN);
-    memset(&conn->other_addr, '\0', IPV4_ADDR_MAX_LEN);
+    strncpy(conn->group_addr, MULTICAST_TEMP_GROUP, INET_ADDRSTRLEN);
+    memset(&conn->other_addr, '\0', INET_ADDRSTRLEN);
 }
 
 void sc_socket_client_init(connection_t *conn) {
@@ -183,11 +183,11 @@ void sc_socket_client_init(connection_t *conn) {
     conn->send_sequence = 0;
     conn->recv_sequence = 0;
     conn->is_server = false;
-    memset(&conn->group_addr, '\0', IPV4_ADDR_MAX_LEN);
-    memset(&conn->other_addr, '\0', IPV4_ADDR_MAX_LEN);
+    memset(&conn->group_addr, '\0', INET_ADDRSTRLEN);
+    memset(&conn->other_addr, '\0', INET_ADDRSTRLEN);
 }
 
-uint8_t sc_socket_client_join(connection_t *conn, char multicast_group[IPV4_ADDR_MAX_LEN]) {
+uint8_t sc_socket_client_join(connection_t *conn, char multicast_group[INET_ADDRSTRLEN]) {
     struct ip_mreq mreq;
     int32_t opt_ret;
 
@@ -201,9 +201,9 @@ uint8_t sc_socket_client_join(connection_t *conn, char multicast_group[IPV4_ADDR
     );
     if (opt_ret == 0) {
         // Store joined group address
-        memcpy(conn->group_addr, multicast_group, IPV4_ADDR_MAX_LEN);
+        memcpy(conn->group_addr, multicast_group, INET_ADDRSTRLEN);
     } else {
-        LOG_ERROR("Failed to join multicast group %.*s. Errno [%d] %s", IPV4_ADDR_MAX_LEN,
+        LOG_ERROR("Failed to join multicast group %.*s. Errno [%d] %s", INET_ADDRSTRLEN,
             multicast_group, errno, strerror(errno));
     }
     return opt_ret == 0;
@@ -223,9 +223,9 @@ uint8_t sc_socket_client_leave(connection_t *conn) {
         sizeof(struct ip_mreq)
     );
     if (opt_ret == 0) {
-        memset(&conn->group_addr, '\0', IPV4_ADDR_MAX_LEN);
+        memset(&conn->group_addr, '\0', INET_ADDRSTRLEN);
     } else {
-        LOG_ERROR("Failed to leave multicast group %.*s. Errno [%d] %s", IPV4_ADDR_MAX_LEN,
+        LOG_ERROR("Failed to leave multicast group %.*s. Errno [%d] %s", INET_ADDRSTRLEN,
             conn->group_addr, errno, strerror(errno));
     }
     return opt_ret == 0;
@@ -254,9 +254,9 @@ uint8_t sc_network_server_advertise(connection_t *conn) {
         },
         .payload = { 0 }  // written with below memcpy
     };
-    memcpy(datagram.payload.group_addr, conn->group_addr, IPV4_ADDR_MAX_LEN);
+    memcpy(datagram.payload.group_addr, conn->group_addr, INET_ADDRSTRLEN);
 
-    return _broadcast(conn, (uint8_t *) &datagram, sizeof(datagram_header) + IPV4_ADDR_MAX_LEN) > 0;
+    return _broadcast(conn, (uint8_t *) &datagram, sizeof(datagram_header) + INET_ADDRSTRLEN) > 0;
 }
 
 uint8_t sc_network_send(connection_t *conn, datagram_t *dgram, uint32_t len) {
@@ -287,7 +287,7 @@ uint8_t sc_network_receive(connection_t *conn, datagram_t *dest, uint8_t aux) {
     uint8_t buffer[sizeof(datagram_t)];
     struct sockaddr_in src_addr;
     uint32_t addr_len = sizeof(struct sockaddr_in);
-    char src_ip_buffer[IPV4_ADDR_MAX_LEN];
+    char src_ip_buffer[INET_ADDRSTRLEN];
     int32_t socket_fd = aux ? conn->socket_aux_fd : conn->socket_audio_fd;
 
     ssize_t bytes_received = recvfrom(
@@ -318,11 +318,11 @@ uint8_t sc_network_receive(connection_t *conn, datagram_t *dest, uint8_t aux) {
     dest->header.timestamp = recv_dgram->header.timestamp;
     if (recv_dgram->header.kind == SERVER_AD) {
         // Advertised multicast group address
-        memcpy(dest->payload.group_addr, recv_dgram->payload.group_addr, IPV4_ADDR_MAX_LEN);
+        memcpy(dest->payload.group_addr, recv_dgram->payload.group_addr, INET_ADDRSTRLEN);
         
         // Store the source IP address for the received datagram
-        inet_ntop(AF_INET, &src_addr.sin_addr, src_ip_buffer, IPV4_ADDR_MAX_LEN);
-        memcpy(conn->other_addr, src_ip_buffer, IPV4_ADDR_MAX_LEN);
+        inet_ntop(AF_INET, &src_addr.sin_addr, src_ip_buffer, INET_ADDRSTRLEN);
+        memcpy(conn->other_addr, src_ip_buffer, INET_ADDRSTRLEN);
     }
     else if (recv_dgram->header.kind == SERVER_AUDIO) {
         // Sent audio payload

@@ -6,7 +6,6 @@
 #include <netinet/in.h>
 
 #define DATAGRAM_PAYLOAD_MAX_SIZE 1  // TODO: revise
-#define IPV4_ADDR_MAX_LEN 16
 
 typedef enum {
     SERVER_AD = 0,
@@ -21,7 +20,7 @@ typedef struct __attribute__((__packed__)) {
 } datagram_header;
 
 typedef union __attribute__((__packed__)) {
-    char group_addr[IPV4_ADDR_MAX_LEN];        // SERVER_AD
+    char group_addr[INET_ADDRSTRLEN];          // SERVER_AD
     uint8_t audio[DATAGRAM_PAYLOAD_MAX_SIZE];  // SERVER_AUDIO
 } datagram_payload;
 
@@ -36,8 +35,6 @@ typedef struct {
     uint32_t send_sequence;
     uint32_t recv_sequence;
     uint8_t  is_server;
-    char     group_addr[IPV4_ADDR_MAX_LEN];
-    char     other_addr[IPV4_ADDR_MAX_LEN];  // server: self/own addr, client: server addr.
-    // struct sockaddr_in group_addr;
-    // struct sockaddr_in other_addr;  // server: self/own addr, client: server addr.
+    char     group_addr[INET_ADDRSTRLEN];
+    char     other_addr[INET_ADDRSTRLEN];  // Client: server addr. Server: unused.
 } connection_t;
