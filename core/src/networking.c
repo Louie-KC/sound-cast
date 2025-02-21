@@ -232,6 +232,23 @@ uint8_t sc_socket_client_leave(connection_t *conn) {
 }
 
 void sc_socket_close(connection_t *conn) {
+    datagram_t close_notif;
+    struct timeval time;
+    uint64_t dgram_size;
+
+    if (conn->is_server && conn->group_addr[0] != '\0') {
+        gettimeofday(&time, NULL);
+        close_notif.header.kind = SERVER_CLOSE;
+        close_notif.header.sequence = conn->send_sequence;
+        close_notif.header.timestamp = time;
+        memcpy(&close_notif.payload.group_addr, conn->group_addr, INET_ADDRSTRLEN);
+        LOG_INFO("Broadcasting group close notification");
+        // Try broadcasting closure up to 5 times
+        dgram_size = sizeof(datagram_header) + INET_ADDRSTRLEN;
+        for (int i = 0; i < 5 && !sc_network_send(conn, &close_notif, dgram_size); i++) {
+            // empty
+        }
+    }
     if (conn->socket_audio_fd > 0 && shutdown(conn->socket_audio_fd, 2) < 0) {
         LOG_ERROR("sc_socket_close: multi socket shutdown error. errno [%d] %s", errno, strerror(errno));
     }
@@ -240,6 +257,8 @@ void sc_socket_close(connection_t *conn) {
     }
     conn->socket_audio_fd = SOCKET_CLOSED_FD;
     conn->socket_aux_fd = SOCKET_CLOSED_FD;
+    memset(&conn->group_addr, '\0', INET_ADDRSTRLEN);
+    memset(&conn->other_addr, '\0', INET_ADDRSTRLEN);
 }
 
 uint8_t sc_network_server_advertise(connection_t *conn) {
